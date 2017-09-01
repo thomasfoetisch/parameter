@@ -6,7 +6,7 @@ int main(int argc, char** argv) {
     p.read_from_file(argv[1]);
     p.print_key_values(std::cout);
 
-    std::cout << std::boolalpha << p.get_value<bool>("key4") << std::endl;
+    std::cout << p.get_value<double>("bool-true-o") << std::endl;
   }
   catch (const std::string& e) {
     std::cout << e << std::endl;

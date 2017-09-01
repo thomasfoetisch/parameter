@@ -8,6 +8,8 @@ namespace parameter {
       stream << "<eoi>"; break;
     case symbol::key:
       stream << "<key>"; break;
+    case symbol::import:
+      stream << "<import>"; break;
     case symbol::equal:
       stream << "<equal>"; break;
     case symbol::value:
@@ -29,14 +31,15 @@ namespace parameter {
     regex_lexer_builder<token_type> rlb(symbol::eoi); {
       rlb.emit(symbol::key, "[-_a-zA-Z0-9]+");
       rlb.emit(symbol::boolean, "(true)|(false)|(yes)|(no)|(on)|(off)");
-      rlb.emit(symbol::string, "\"[^\"]*\"");
+      rlb.emit(symbol::string, "\"([^\"\\\\]|(\\\\\")|(\\\\\\\\))*\"");
       rlb.emit(symbol::real,
                "[+-]?"
                "((\\.\\d+)|(\\d+\\.)|(\\d+\\.\\d+)|(\\d+))"
                "([eE][+-]?\\d+)?");
       rlb.emit(symbol::integer, "[+-]?\\d+");
       rlb.emit(symbol::equal, "=|:|(->)");
-
+      rlb.emit(symbol::import, "import");
+      
       rlb.skip("(\\s|(;[^\\n]*\\n))*");
     }
 

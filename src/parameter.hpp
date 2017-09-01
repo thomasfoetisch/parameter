@@ -4,12 +4,123 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <numeric>
+
+#include <unistd.h>
 
 #include <spikes/meta.hpp>
 #include <lexer/lexer.hpp>
 
 namespace parameter {
 
+  class resource_locator {
+  public:
+    resource_locator(const std::string& path)
+      : separator('/'), is_absolute(false) {
+      if (path[0] == '/')
+        is_absolute = true;
+      components = split(path, separator);
+    }
+    
+    std::string resource_name() const { return components.back(); }
+    
+    resource_locator resource_path() const {
+      if (components.size() == 1)
+        return resource_locator("./");
+      else
+        return resource_locator(components.begin(), components.end() - 1, is_absolute);
+    }
+    
+    std::string to_string() const {
+      std::string str;
+
+      if (is_absolute) str += separator;
+
+      for (std::size_t i(0); i < components.size() - 1; ++i) {
+        str += components[i];
+        str += '/';
+      }
+      str += components.back();
+
+      return str;
+    }
+
+  private:
+    std::vector<std::string> components;
+    char separator;
+    bool is_absolute;
+
+  private:
+    resource_locator(std::vector<std::string>::const_iterator begin,
+                     std::vector<std::string>::const_iterator end,
+                     bool is_absolute)
+      : components(begin, end), separator('/'), is_absolute(is_absolute) {}
+
+    static std::vector<std::string> split(const std::string& str, char separator) {
+      std::vector<std::string> components;
+      std::string c;
+      
+      std::size_t i(0);
+      while (i < str.size()) {
+        if (str[i] == separator) {
+          if (c.size())
+            components.push_back(c);
+          c.clear();
+          i += 1;
+        } else {
+          c += str[i];
+          i += 1;
+        }
+      }
+      
+      if (c.size())
+        components.push_back(c);
+
+      return components;
+    }
+  };
+
+  inline
+  resource_locator get_current_working_directory() {
+    std::vector<char> buffer(255);
+    char* b(&buffer[0]);
+    while (getcwd(b, buffer.size()) == nullptr)
+      buffer.resize(buffer.size() * 2);
+    return resource_locator(std::string(b));
+  }
+
+  inline
+  void change_directory(resource_locator l) {
+    std::string path(l.to_string());
+    if (path != ".") {
+
+      int res(chdir(path.c_str()));
+
+      if (res != 0) {
+        switch (errno) {
+        case EACCES:
+          throw std::string("chdir error EACCES");
+        case EFAULT:
+          throw std::string("chdir error EFAULT");
+        case EIO:
+          throw std::string("chdir error EIO");
+        case ELOOP:
+          throw std::string("chdir error ELOOP");
+        case ENAMETOOLONG:
+          throw std::string("chdir error ENAMETOOLONG");
+        case ENOENT:
+          throw std::string("chdir error ENOENT");
+        case ENOMEM:
+          throw std::string("chdir error ENOMEM");
+        case ENOTDIR:
+          throw std::string("chdir error ENOTDIR");
+        default:
+          throw std::string("chdir unknown error");
+        }
+      }
+    }
+  }
+  
   class string_builder {
   public:
     template<typename value_type>
@@ -63,7 +174,8 @@ namespace parameter {
     integer,
     real,
     boolean,
-    key 
+    import,
+    key
   };
 
   using symbol_type = symbol;
@@ -117,21 +229,28 @@ namespace parameter {
   
   class collection {
   public:
-    collection(): lex(build_lexer()) {}
+    collection() {}
     ~collection() { clear(); }
       
     void read_from_file(const std::string& filename) {
-      std::ifstream f(filename.c_str(), std::ios::in);
-      if (not f)
-        throw std::string("file '" + filename + "' is not accessible");
+      resource_locator config_file(filename);
+      resource_locator cwd(get_current_working_directory());
+      change_directory(config_file.resource_path()); {
       
-      file_source<token_type> fs(&f, filename);
-      lex.set_source(&fs);
+        std::ifstream f(config_file.resource_name().c_str(), std::ios::in);
+        if (not f)
+          throw std::string("file '" + filename + "' is not accessible");
 
-      token_source<token_type> ts(&lex);
-      parse_parameter_list(ts);
+        regex_lexer<token_type> lex(build_lexer());
+      
+        file_source<token_type> fs(&f, filename);
+        lex.set_source(&fs);
 
-      lex.set_source(nullptr);
+        token_source<token_type> ts(&lex);
+        parse_parameter_list(ts);
+      }
+
+      change_directory(cwd);
     }
 
     void set_key_value(const std::string& key, double value) {
@@ -153,8 +272,20 @@ namespace parameter {
       using map_iterator_type = map_type::const_iterator;
 
       map_iterator_type kv(key_value.find(key));
-      if (kv == key_value.end())
-        throw std::string("the key '" + key + "' is not found in the parameter collection");
+      if (kv == key_value.end()) {
+        std::string suggestion;
+        if (make_suggestion(key, suggestion)) {
+            throw std::string("the key '"
+                              + key
+                              + "' is not found in the parameter collection, did you mean '"
+                              + suggestion
+                              + "'?");
+        } else {
+            throw std::string("the key '"
+                              + key
+                              + "' is not found in the parameter collection");
+        }
+      }
 
       const value<value_type>* v(dynamic_cast<const value<value_type>*>(kv->second));
       if (not v)
@@ -174,17 +305,61 @@ namespace parameter {
 
     void print_key_values(std::ostream& stream) const {
       for (const auto& kv: key_value)
-        stream
-          << "key " << kv.first
-          << " with " << kv.second->get_type()
-          << " value: " << kv.second->print_value() << std::endl;
+        stream << kv.second->get_type() << " " << kv.first
+          << " = "
+          << kv.second->print_value() << std::endl;
     }
     
   private:
-    regex_lexer<token_type> lex;
     std::map<std::string, basic_value*> key_value;
 
   private:
+    std::size_t levenshtein_distance(const std::string& s1, const std::string& s2) const {
+      std::vector<int>
+        v0(s2.size() + 1),
+        v1(s2.size() + 1);
+      
+      std::iota(v0.begin(), v0.end(), 0);
+
+      for (std::size_t i(0); i < s1.size(); ++i) {
+        v0[0] = i + 1;
+
+        int substitution_cost(0);
+        for (std::size_t j(0); j < s2.size(); ++j) {
+          if (s1[i] == s2[j])
+            substitution_cost = 0;
+          else
+            substitution_cost = 1;
+
+          v1[j + 1] = std::min({v1[j] + 1,
+                                v0[j + 1] + 1,
+                                v0[j] + substitution_cost});
+        }
+        std::swap(v0, v1);
+      }
+      return v0.back();
+    }
+    
+    bool make_suggestion(const std::string& key, std::string& suggestion) const {
+      using map_type = std::map<std::string, basic_value*>;
+      using map_iterator_type = map_type::const_iterator;
+
+      map_iterator_type closest_key(
+        std::min_element(key_value.cbegin(),
+                         key_value.cend(),
+                         [&](const map_type::value_type& kv1,
+                             const map_type::value_type& kv2) {
+                           return levenshtein_distance(kv1.first, key) < levenshtein_distance(kv2.first, key);
+                         }));
+      
+      if (closest_key != key_value.end()) {
+        suggestion = closest_key->first;
+        return true;
+      } else {
+        return false;
+      }
+    }
+    
     void set_key_value(const std::string& key, basic_value* v) {
       using map_type = std::map<std::string, basic_value*>;
       using map_iterator_type = map_type::iterator;
@@ -198,6 +373,23 @@ namespace parameter {
       }
     }
 
+    std::string string_token_to_string(token_type* t) {
+      std::string str(t->value.substr(1, t->value.size() - 2));
+
+      std::string::iterator i(str.begin());
+      while (i != str.end()) {
+        if (*i == '\\') {
+          i = str.erase(i);
+          if (i != str.end())
+            ++i;
+        } else {
+          ++i;
+        }
+      }
+      
+      return str;
+    }
+    
     // FIRST(parameter list) = {key}
     void parse_parameter_list(token_source<token_type>& ts) {
       token_type* t(ts.peek());
@@ -207,8 +399,17 @@ namespace parameter {
         case symbol::key:
           parse_key_value(ts);
           break;
+        case symbol::import:
+          parse_import_statment(ts);
+          break;
         default:
-          throw string_builder("unexpected ")(t->symbol)(" token at ")(t->render_coordinates())(" instead of a ")(symbol::key)(" token").str();
+          throw string_builder("unexpected ")
+            (t->symbol)
+            (" token at ")
+            (t->render_coordinates())
+            (" instead of a ")
+            (symbol::key)
+            (" token").str();
         }
         t = ts.peek();
       }
@@ -314,10 +515,7 @@ namespace parameter {
           (string_token->render_coordinates())
           (" instead of a ")(symbol::real).str();
 
-      basic_value* v(new ::parameter::value<std::string>(
-                             string_token->value.substr(
-                               1,
-                               string_token->value.size() - 2)));
+      basic_value* v(new ::parameter::value<std::string>(string_token_to_string(string_token)));
       
       delete string_token;
 
@@ -353,6 +551,28 @@ namespace parameter {
       delete boolean_token;
 
       return v;
+    }
+
+    void parse_import_statment(token_source<token_type>& ts) {
+      token_type
+        *import_token(ts.get()),
+        *string_token(ts.get());
+
+      if (import_token->symbol != symbol::import)
+        throw string_builder("unexpected ")
+          (import_token->symbol)
+          (" token at ")
+          (import_token->render_coordinates())
+          (" instead of a ")(symbol::import).str();
+
+      if (string_token->symbol != symbol::string)
+        throw string_builder("unexpected ")
+          (string_token->symbol)
+          (" token at ")
+          (string_token->render_coordinates())
+          (" instead of a ")(symbol::string).str();
+
+      read_from_file(string_token_to_string(string_token));
     }
   };
   
