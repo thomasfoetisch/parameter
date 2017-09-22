@@ -207,7 +207,7 @@ namespace parameter {
 
     virtual std::string print_value() const;
 
-    const value_type get_value() const { return v; }
+    const value_type& get_value() const { return v; }
       
   private:
     const value_type v;
