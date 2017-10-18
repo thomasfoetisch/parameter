@@ -508,7 +508,7 @@ namespace parameter {
       token_type *override_keyword_token(ts.peek());
       if (override_keyword_token->symbol == symbol::override_keyword) {
         override_key_value = true;
-        ts.get();
+        delete ts.get();
       }
       
       token_type
