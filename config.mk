@@ -15,15 +15,16 @@ INCLUDE_DIR = include/
 LIB_DIR = lib/
 
 
-SOURCES = src/main.cpp src/parameter.cpp
+SOURCES = src/main.cpp src/parameter.cpp src/enums.cpp
 
 HEADERS = include/parameter/parameter.hpp
 
-BIN = bin/main
+BIN = bin/main bin/enums
 
 
 #bin/...: ...
 bin/main: build/src/main.o build/src/parameter.o
+bin/enums: build/src/enums.o build/src/parameter.o
 
 LIB = lib/libparameter.a
 

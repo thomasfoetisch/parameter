@@ -22,6 +22,10 @@ namespace parameter {
       stream << "<integer>"; break;
     case symbol::boolean:
       stream << "<boolean>"; break;
+    case symbol::enum_item:
+      stream << "<enum_token>"; break;
+    case symbol::override_keyword:
+      stream << "<override"; break;
     }
     return stream;
   }
@@ -38,7 +42,9 @@ namespace parameter {
                "([eE][+-]?\\d+)?");
       rlb.emit(symbol::integer, "[+-]?\\d+");
       rlb.emit(symbol::equal, "=|:|(->)");
+      rlb.emit(symbol::enum_item, "#[-_a-zA-Z0-9]+");
       rlb.emit(symbol::import, "import");
+      rlb.emit(symbol::override_keyword, "override");
       
       rlb.skip("(\\s|(;[^\\n]*\\n))*");
     }

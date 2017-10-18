@@ -170,11 +170,13 @@ namespace parameter {
   
   enum class symbol {
     eoi, equal, value,
+    enum_item,
     string,
     integer,
     real,
     boolean,
     import,
+    override_keyword,
     key
   };
 
@@ -191,11 +193,35 @@ namespace parameter {
     virtual ~basic_value() {}
     virtual std::string get_type() const = 0;
     virtual std::string print_value() const = 0;
+    virtual basic_value* clone() const = 0;
 
     using value_type_list = type_list<int, bool, std::string, double>;
     static constexpr const char* type_names[] = {"integer", "boolean", "string", "real"};
   };
 
+  class enum_value: public basic_value {
+  public:
+    enum_value(const std::string& token_value): token_value(token_value) {}
+
+    virtual std::string get_type() const {
+      return "enum";
+    }
+
+    virtual std::string print_value() const {
+      return std::string("#") + token_value;
+    }
+    virtual basic_value* clone() const {
+      return new enum_value(*this);
+    }
+
+    const std::string& get_token_value() const {
+      return token_value;
+    }
+
+  private:
+    const std::string token_value;
+  };
+  
   template<typename value_type>
   class value: public basic_value {
   public:
@@ -207,6 +233,9 @@ namespace parameter {
 
     virtual std::string print_value() const;
 
+    virtual basic_value* clone() const {
+      return new value<value_type>(*this);
+    }
     const value_type& get_value() const { return v; }
       
   private:
@@ -266,6 +295,53 @@ namespace parameter {
       set_key_value(key, new ::parameter::value<std::string>(value));
     }
 
+    template<typename enum_type>
+    const enum_type& get_enum_value(const std::string& key,
+                                    const std::map<std::string, enum_type>& token_map) const {
+      using map_type = std::map<std::string, basic_value*>;
+      using map_iterator_type = map_type::const_iterator;
+
+      map_iterator_type kv(key_value.find(key));
+      if (kv == key_value.end()) {
+        std::string suggestion;
+        if (make_suggestion(key, suggestion)) {
+            throw std::string("the key '"
+                              + key
+                              + "' is not found in the parameter collection, did you mean '"
+                              + suggestion
+                              + "'?");
+        } else {
+            throw std::string("the key '"
+                              + key
+                              + "' is not found in the parameter collection");
+        }
+      }
+
+      const enum_value* v(dynamic_cast<const enum_value*>(kv->second));
+      if (not v)
+        throw std::string("failed to get an enum value from the key '" + kv->first
+                          + "' which has type " + kv->second->get_type());
+
+      const auto mapped_enum_value(token_map.find(v->get_token_value()));
+      if (mapped_enum_value == token_map.end()) {
+        std::string enum_value_set;
+        for (const auto& ev: token_map) {
+          enum_value_set += ev.first;
+          enum_value_set += " ";
+        }
+        
+        throw std::string("The value '"
+                          + v->get_token_value()
+                          + "' is not among the enum value set. Accepted value for the key '"
+                          + key
+                          +"' is one of { "
+                          + enum_value_set
+                          + "}.");
+      } else {
+        return mapped_enum_value->second;
+      }
+    }
+    
     template<typename value_type>
     const value_type& get_value(const std::string& key) const {
       using map_type = std::map<std::string, basic_value*>;
@@ -291,7 +367,7 @@ namespace parameter {
       if (not v)
         throw std::string("failed to get a "
                           + std::string(basic_value::type_names[get_index_of_element<value_type, basic_value::value_type_list>::value])
-                          + "from the key '" + kv->first
+                          + " from the key '" + kv->first
                           + "' which has type " + kv->second->get_type());
 
       return v->get_value();
@@ -359,20 +435,30 @@ namespace parameter {
         return false;
       }
     }
-    
-    void set_key_value(const std::string& key, basic_value* v) {
+
+    /* 
+     * return false of initial definition, true on redefinition 
+     */
+    bool set_key_value(const std::string& key, basic_value* v) {
       using map_type = std::map<std::string, basic_value*>;
       using map_iterator_type = map_type::iterator;
 
       map_iterator_type kv(key_value.find(key));
       if (kv == key_value.end()) {
         key_value[key] = v;
+        return false;
       } else {
         delete kv->second;
         kv->second = v;
+        return true;
       }
     }
 
+    std::string enum_item_token_to_enum_item(token_type* t) {
+      std::string str(t->value.substr(1, t->value.size() - 1));
+      return str;
+    }
+    
     std::string string_token_to_string(token_type* t) {
       std::string str(t->value.substr(1, t->value.size() - 2));
 
@@ -397,7 +483,8 @@ namespace parameter {
       while (t->symbol != symbol::eoi) {
         switch (t->symbol) {
         case symbol::key:
-          parse_key_value(ts);
+        case symbol::override_keyword:
+          parse_key_value_definition(ts);
           break;
         case symbol::import:
           parse_import_statment(ts);
@@ -416,7 +503,14 @@ namespace parameter {
     }
 
     // FIRST(key_value) = {key}
-    void parse_key_value(token_source<token_type>& ts) {
+    void parse_key_value_definition(token_source<token_type>& ts) {
+      bool override_key_value(false);
+      token_type *override_keyword_token(ts.peek());
+      if (override_keyword_token->symbol == symbol::override_keyword) {
+        override_key_value = true;
+        ts.get();
+      }
+      
       token_type
         *key_token(ts.get()),
         *equal_token(ts.get());
@@ -429,19 +523,26 @@ namespace parameter {
           (" instead of a ")
           (symbol::equal).str();
 
+      bool redefinition(false);
       token_type* value_token(ts.peek());
       switch (value_token->symbol) {
       case symbol::integer:
-        set_key_value(key_token->value, parse_integer_value(ts));
+        redefinition = set_key_value(key_token->value, parse_integer_value(ts));
         break;
       case symbol::real:
-        set_key_value(key_token->value, parse_real_value(ts));
+        redefinition = set_key_value(key_token->value, parse_real_value(ts));
         break;
       case symbol::boolean:
-        set_key_value(key_token->value, parse_boolean_value(ts));
+        redefinition = set_key_value(key_token->value, parse_boolean_value(ts));
         break;
       case symbol::string:
-        set_key_value(key_token->value, parse_string_value(ts));
+        redefinition = set_key_value(key_token->value, parse_string_value(ts));
+        break;
+      case symbol::enum_item:
+        redefinition = set_key_value(key_token->value, parse_enum_item(ts));
+        break;
+      case symbol::key:
+        redefinition = set_key_value(key_token->value, parse_key_value(ts));
         break;
       default:
         throw string_builder("unexpected ")
@@ -451,6 +552,15 @@ namespace parameter {
           (" instead of a ")
           (symbol::value).str();
       }
+
+      if (override_key_value and not redefinition)
+        throw string_builder("attempt to redefine key '")(key_token->value)("' which is not (yet) defined.").str();
+
+      if (redefinition and not override_key_value)
+        std::cerr << "warning: redefinition of key '" << key_token->value
+                  << "' at " << key_token->render_coordinates() << ". If it is the intended action, "
+                  << "prefix the definition by the 'override' keyword." << std::endl;
+
 
       delete key_token;
       delete equal_token;
@@ -522,6 +632,23 @@ namespace parameter {
       return v;
     }
 
+    // FIRST(enum_token) = {enum_token}
+    basic_value* parse_enum_item(token_source<token_type>& ts) {
+      token_type* enum_item_token(ts.get());
+      if (enum_item_token->symbol != symbol::enum_item)
+        throw string_builder("unexpected ")
+          (enum_item_token->symbol)
+          (" token at ")
+          (enum_item_token->render_coordinates())
+          (" instead of a ")(symbol::real).str();
+
+      basic_value* v(new ::parameter::enum_value(enum_item_token_to_enum_item(enum_item_token)));
+      
+      delete enum_item_token;
+
+      return v;
+    }
+
     // FIRST(integer_value) = {boolean}
     basic_value* parse_boolean_value(token_source<token_type>& ts) {
       token_type* boolean_token(ts.get());
@@ -549,6 +676,33 @@ namespace parameter {
           (" to an real value ").str();
       
       delete boolean_token;
+
+      return v;
+    }
+
+    basic_value* parse_key_value(token_source<token_type>& ts) {
+      token_type* key_token(ts.get());
+      if (key_token->symbol != symbol::key)
+        throw string_builder("unexpected ")
+          (key_token->symbol)(" token at ")
+          (key_token->render_coordinates())(" instead of a ")(symbol::key).str();
+
+      basic_value* v(nullptr);
+
+
+      using map_type = std::map<std::string, basic_value*>;
+      using map_iterator_type = map_type::iterator;
+
+      map_iterator_type kv(key_value.find(key_token->value));
+      if (kv == key_value.end()) {
+        throw string_builder("key ")(key_token->value)
+          (" is undefined on the right hand side of the definition at ")
+          (key_token->render_coordinates()).str();
+      } else {
+        v = kv->second->clone();
+      }
+      
+      delete key_token;
 
       return v;
     }
