@@ -1,0 +1,31 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{color}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{graphicx,fancyhdr}
+\usepackage{listings}
+\usepackage{inconsolata}
+\usepackage{syntax}
+\usepackage{geometry}
+\usepackage{url}
+
+\setlength{\grammarindent}{12em}
+
+\graphicspath{{../figures/}}
+
+\title{Collection de set de param\`etres: documentation}
+\date{\today}
+\author{Thomas Hilke}
+
+\newcommand{\cparent}[1]{\left\{ #1 \right\}}
+\mathchardef\mhyphen="2D
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\input{content.tex}
+
+\end{document}
