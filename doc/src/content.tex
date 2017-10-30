@@ -1,0 +1,495 @@
+\section{Introduction}
+Ce document d\'ecrit le langage de d\'efinition de param\`etres
+accept\'e par le parseur du package \texttt{parameter}. Un fichier de
+param\`etre permet de sp\'ecifier un ensemble de cl\'es-valeurs, ou
+les cl\'es sont des cha\^ines de caract\`eres et les valeurs
+appartiennent \`a l'un des cinques types disponibles. On appellera
+``set de param\`etres'' un ensemble de cl\'es-valeurs.
+
+De plus, un fichier de param\`etre permet de d\'efinir non pas un
+unique set de param\`etres, mais une collection de set de
+param\`etres, \`a travers de laquelle le code client pourra it\'erer.
+
+
+La section \ref{sec:syntax} pr\'esente la syntaxe formelle accept\'ee
+par le parseur ainsi que la d\'efinition des symboles terminaux. Cette
+section constitue une r\'ef\'erence concernant la syntaxe d'un fichier
+de param\`etres. La section \ref{sec:semantic} d\'emontre l'usage et
+la s\'emantique des diff\'erentes constructions syntaxiques \`a
+travers une s\'erie d'exemples. Finalement, la section \ref{sec:api}
+documente l'API \texttt{C++} qui permet de lire des fichiers et
+d'acc\'eder aux valeurs des param\`etres sp\'ecifi\'ees de chaque
+\'element de la collection r\'esultante.
+
+
+\section{Syntaxe formelle}\label{sec:syntax}
+Dans cette partie, on d\'efinit de fa\c con formelle la syntaxe
+accept\'ee par le lexer et le parser. Les informations pr\'esent\'ees
+dans cette partie tienne lieu de r\'eference, apr\`es le code
+lui-m\^eme en ce qui concerne la syntaxe et s\'emantique du
+langage.
+
+\subsection{Grammaire}\label{sec:grammar}
+La syntaxe accept\'ee par le parseur du fichier de param\`etre est une
+grammaire LL(1) d\'efinie ci-dessous. Les symbols entre chevrons
+correspondent aux symbols non-terminaux, les symbols sans
+d\'ecorations correspondent aux symbols terminaux et les symbols
+entres guillemets simples correspondent \`a leur valeur litterale. Le
+symbol \synt{start} est bien entendu r\`egle de production initiale,
+et $\epsilon$ correspond \`a la production vide.
+\begin{grammar}
+  <start> ::= <statment-list>
+  
+  <statment-list> ::= <statment> <statment-list> \alt $\epsilon$
+  
+  <statment> ::= <inclusion> \alt <parameter-definition> \alt <group-definition>
+  
+  <inclusion> ::= 'include' literal-string
+
+  <parameter-definition> ::= key def-symbol <literal-list> \alt 'override' key def-symbol <literal-list>
+
+  <literal-list> ::= <literal> ',' <literal-list> \alt $\epsilon$
+  
+  <literal> ::= key \alt literal-string \alt literal-boolean \alt literal-integer \alt literal-real \alt enum-item
+
+  <group-definition> ::= '[' <parameter-definition-list> ']'
+
+  <parameter-definition-list> ::= <parameter-definition> <parameter-definition-list> \alt $\epsilon$
+\end{grammar}
+On notera que cette syntaxe n'utilise pas de symbol de terminaison de
+ligne, et que les seuls caract\`eres de ponctuation qui apparaissent
+sont la virgule \lit{,} et les crochets \lit{[} et \lit{]}. Malgr\'e tout cette syntaxe
+n'est pas ambig\"ue au sens du parser, et est intuitive \`a
+d\'echiffrer pour un humain.
+
+\subsection{Symbols terminaux}\label{sec:terminals}
+Les expressions r\'eguli\`eres des symbols litt\'eraux \'etant
+triviales, on d\'ecrit ici uniquement les symbols terminaux:
+\begin{itemize}
+\item \texttt{key} = \texttt{/[-\_a-zA-Z0-9]+/},
+\item \texttt{literal-boolean} = \texttt{/(true)|(false)|(yes)|(no)|(on)|(off)/},
+\item \texttt{literal-string} = \texttt{/"($\lbrack$\^{}"\textbackslash\textbackslash$\rbrack$|(\textbackslash\textbackslash")|(\textbackslash\textbackslash\textbackslash\textbackslash))*"/},
+\item \texttt{literal-real} = \texttt{/[+-]?((\textbackslash.\textbackslash d+)|(\textbackslash d+\textbackslash.)|(\textbackslash d+\textbackslash.\textbackslash d+)|(\textbackslash d+))(\lbrack eE\rbrack\lbrack +-\rbrack?\textbackslash d+)?/},
+\item \texttt{literal-integer} = \texttt{/\lbrack+-\rbrack?\textbackslash d+/},
+\item \texttt{enum-item} = \texttt{/\#\lbrack-\_a-zA-Z0-9\rbrack+/},
+\item \texttt{def-symbol} = \texttt{/=|:|(->)/}.
+\end{itemize}
+Finalement, chaque token doit \^etre s\'epar\'e par une s\'equence de
+caract\`eres qui correspond \`a l'expression r\'eguli\`ere
+\texttt{/(\textbackslash s|(;\lbrack\^{}\textbackslash%
+n]*\textbackslash n))*/}, ce qui implique que les terminaisons de
+lignes pr\'ec\'ed\'ees par le caract\`ere point-virgule '\texttt{;}'
+sont ignor\'ees et permettent l'insertion de commentaires.
+
+
+\section{Exemples et s\'emantique}\label{sec:semantic}
+
+\subsection{Commentaires}
+Comme indiqu\'e ci-dessus, des commentaires peuvent \^etre ins\'er\'es
+dans une liste de param\`etres. Un commentaire commence par le
+caract\`ere '\texttt{;}' et se termine par le retour \`a la ligne. Il
+n'y a pas de notion de commentaire multiligne: chaque nouvelle ligne
+de commentaire doit \^etre pr\'ec\'ed\'ee par un '\texttt{;}'. Par
+exemple:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  ; Ceci est un commentaire,
+  ; ceci est une deuxieme ligne de commentaire.
+  
+  var = "str"   ; Definition d'un parametre
+\end{lstlisting}
+On utilisera les commentaires pour d\'ecrire la s\'emantique d'un
+param\`etre, ou pour donner des pr\'ecisions sur la valeur
+sp\'ecifi\'ee, comme les unit\'es physiques, par exemples.
+
+On \'evitera d'utiliser des commentaires pour ``d\'esactiver'' une ou
+des d\'efinitions, en revanche. Plusieurs construction dans la
+grammaire sont pr\'evues pour r\'epondre \`a ce besoin, l'une d'elles
+\'etant le sujet de la partie ci-dessous.
+
+
+\subsection{Inclusion}
+Souvent, plusieurs applications partagent des m\^emes groupes de
+param\`etres. Par exemple, on peut imaginer un groupe de param\`etre
+qui encode les propri\'et\'es thermique de certains mat\'eriaux, la
+description d'une g\'eometrie, ou encore des param\`etres
+sp\'ecifiques \`a une certaine m\'ethode num\'erique.
+
+Afin de minimiser la duplication du code, la syntaxe permet
+l'inclusion du fichiers de param\`etres, par l'interm\'ediaire du
+mot-cl\'e \texttt{include}. Supposons que le fichier \texttt{water.conf}
+existe et contienne:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  density = 1.0                 ; [g/cm^3]
+  specific-heat = 4.182         ; [j/g/K]
+  dynamical-viscosity = 2.0e-3  ; [Pa s]
+\end{lstlisting}
+On peut ensuite r\'eutiliser ces d\'efinitions dans un nouveau fichier
+de param\`etre \texttt{driven-cavity.conf}:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  include "water.conf"
+
+  box-size = 1.0 ; [m]
+  boundary-velocity = 0.15 ; [m/s]
+\end{lstlisting}
+Le chemin d'un fichier est toujours relatif au fichier qui
+l'inclu. Ici, il faut que le fichier \texttt{water.conf} doit se
+trouver dans le m\^eme dossier que le \texttt{driven-cavity.conf}. Le
+chemin d'un fichier inclu ne peut pas \^etre absolu.
+
+
+\subsection{Definition de param\`etre}
+Un param\`etre est d\'efini par l'association entre un identifiant
+(\texttt{key} tel que d\'efini dans la grammaire) et une valeur. Une
+valeur appartient \`a l'un des cinq types pr\'edefinis:
+\texttt{string}, \texttt{integer},\texttt{real}, \texttt{boolean} et
+\texttt{enumeration}. Dans l'exemple suivant, on d\'efinit cinq
+param\`etres, un de chaque type, avec un commentaire associ\'e:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  string-parameter = "Hello, world"  ; The classical example
+
+  int-parameter = -1234              ; The opposite of the
+                                     ;  natural number 1234
+
+  real-parameter = -3.1415e+00       ; The negative pi number
+
+  boolean-parameter = yes            ; A true value. Equivalent
+                                     ;  to 'true' and 'on'.
+
+  enum-parameter = #neumann          ; enum-parameter has value
+                                     ;  'neumann', which the user
+                                     ;  will have to validate
+
+  str = string-parameter             ; str has the same value as
+                                     ;  string-parameter definied
+                                     ;  above
+\end{lstlisting}
+Vous pouvez vous r\'ef\'erer \`a la partie \ref{sec:terminals} pour
+trouver une r\'ef\'erence de la syntaxe de chaque partie de l'exemple.
+
+On remarque dans l'exemple ci-dessus qu'on peut d\'efinir un
+param\`etre \`a partir d'un autre, \texttt{str} dans ce cas se verra
+associer la valeur de \texttt{string-parameter}, soit la cha\^ine
+\texttt{"Hello, world"}.
+
+\paragraph{Remarque} Le type du param\`etre \texttt{int-parameter} est
+\texttt{integer}, tandis que le type du param\`etre
+\texttt{real-parameter} est \texttt{real}. Les nombres entiers et les
+nombres flottant ne sont pas \'equivalent et ne sont pas
+interchangeable. Si l'API \texttt{C++} demande un \texttt{integer}, on
+ne peu pas sp\'ecifier un \texttt{real}, et reciproquement.
+
+\paragraph{Remarque} On choisira de pr\'ef\'erence des noms de
+param\`etres descriptifs, en caract\`eres minuscule, et les mots
+s\'epar\'es par des trait-d'unions. Le nom d'un param\`etre constitue
+une partie, sinon toute la documentation qui le concerne, il importe
+donc de choisir soigneusement le noms des param\`etres. En
+particulier, on \'evitera les abbr\'eviations, les identifiants de
+moins de 5 caract\`eres, etc.
+
+\subsection{Collection de param\`etres}
+Il arrive souvent en analyse num\'erique de devoir lancer une s\'erie
+de calculs pour lequels un unique param\`etre varie. Un exemple
+classique est l'\'etude de convergence d'un sch\`ema num\'erique. Lors
+d'une \'etude de convergence, on cherche \`a ex\'ecuter l'algorithme
+pour un nombre pr\'ed\'efini de la tailles de subdivisions en espace,
+par exemple.
+
+La syntaxe et s\'emantique de d\'efinition de param\`etre pr\'evoit ce
+cas de figure, et permet de d\'efinir une collection de sets de
+param\`etres.
+
+Soit \texttt{n} le nombre de subdivisions. On peut d\'efinir le
+param\`etre \texttt{n} de la mani\'ere suivante, en sp\'ecifiant une
+liste de valeurs:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  n = 16, 32, 64
+\end{lstlisting}
+ce qui correspond \`a la collection de sets de param\`etres suivante:
+\begin{equation}
+  \cparent{\mathtt{n} = 16}, \cparent{\mathtt{n} = 32}, \cparent{\mathtt{n} = 64}.
+\end{equation}
+Le code se chargera alors d'executer l'algorithme pour chacun des sets
+de param\`etres.
+
+Si des listes de valeurs sont sp\'ecifi\'ees pour plusieurs
+param\`etres simultan\'ement, la collection de sets de param\`etres
+r\'esultant correspond au produit cart\'esien de chaque liste. Par
+exemple, si les param\`etres \texttt{n} et \texttt{m} sont d\'efinis
+par:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  m = 100, 200, 400
+  n = 16, 32, 64
+\end{lstlisting}
+la collection de set de param\`etres r\'esultant est la suivante:
+\begin{align*}
+  \cparent{\mathtt{m} = 100, \mathtt{n} = 16}, \cparent{\mathtt{m} =
+    100, \mathtt{n} = 32}, \cparent{\mathtt{m} = 100, \mathtt{n} =
+    64},\\
+  \cparent{\mathtt{m} = 200, \mathtt{n} = 16}, \cparent{\mathtt{m} =
+      200, \mathtt{n} = 32}, \cparent{\mathtt{m} = 200, \mathtt{n} =
+      64},\\
+  \cparent{\mathtt{m} = 400, \mathtt{n} = 16}, \cparent{\mathtt{m} = 400, \mathtt{n} = 32}, \cparent{\mathtt{m} = 400, \mathtt{n} = 64}.
+\end{align*}
+L'ordre dans lequel le produit cart\'esien est effectu\'e n'est pas
+sp\'ecifi\'e, et donc l'ordre dans lequel sera effectu\'e chaque
+calcul est impr\'evisible. Par contre, l'ordre est d\'eterministe, et
+sera le m\^eme d'une execution \`a l'autre.
+
+Bien entendu, il y a des situations o\`u ce n'est pas le comportement
+souhait\'e, et ou l'on aimerait qque chaque liste de param\`etres soit group\'ee
+s\'equentiellement. La section suivante traite de ce cas de figure.
+
+\subsection{Groupe de param\`etres}
+Il y a des situation o\`u le produit cart\'esien n'est pas la bonne
+approche pour d\'ecrire une collection de sets de param\`etres. Pour
+reprendre l'exemple de l'etude de convergence d'un sch\'ema
+spatio-temporel, on veut sp\'ecifier une subdivision spatiale li\'ee
+\`a la subdivision temporelle. Si note \texttt{space-sub} et
+\texttt{time-sub} le nombre de subdivisions spatiale et temporelle, on
+veut par exemple construire le set de parametres:
+\begin{align*}
+  \cparent{\mathtt{space\mhyphen sub} = 100, \mathtt{time\mhyphen sub} = 16},\\
+  \cparent{\mathtt{space\mhyphen sub} = 200, \mathtt{time\mhyphen sub} = 32},\\
+  \cparent{\mathtt{space\mhyphen sub} = 400, \mathtt{time\mhyphen sub} = 64}.\\
+\end{align*}
+Pour ce faire, on utilise un groupe de param\`etres, group\'e par des
+crochets '\texttt{[}' et '\texttt{]}':
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  [
+    space-sub = 100, 200, 400
+    time-sub  = 16, 32, 64
+  ]
+\end{lstlisting}
+Il faut bien entendu que toutes les listes dans un groupe comportent
+le m\^eme nombre d'\'el\'ements. Un groupe peut comportent autant de
+param\`etres que n\'ecessaire, et on peut bien entendu d\'efinir des
+param\`etres suppl\'ementaires avant et apr\`es l'occurence du
+groupe. Finalement, plusieurs groupe peuvent \^etres d\'efinis dans un
+m\^eme fichier de param\`etres. L'exemple suivant d\'emontre une
+situation compl\`ete:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  a = 1
+  [
+    b = 2, 3
+    c = 4, 5
+  ]
+  [
+    d = 6, 7
+    e = 8, 9
+  ]
+\end{lstlisting}
+g\'en\`ere la collection de sets de param\`etres suivant:
+\begin{align*}
+  \cparent{\mathtt{a} = 1, \mathtt{b} = 2, \mathtt{c} = 4, \mathtt{d} = 6, \mathtt{e} = 8},\\
+  \cparent{\mathtt{a} = 1, \mathtt{b} = 3, \mathtt{c} = 5, \mathtt{d} = 6, \mathtt{e} = 8},\\
+  \cparent{\mathtt{a} = 1, \mathtt{b} = 2, \mathtt{c} = 4, \mathtt{d} = 7, \mathtt{e} = 9},\\
+  \cparent{\mathtt{a} = 1, \mathtt{b} = 3, \mathtt{c} = 5, \mathtt{d} = 7, \mathtt{e} = 9}.
+\end{align*}
+On remarque que chaque groupe participe au produit cart\'esien de
+l'ensemble des param\`etres, mais pas les listes constituant chacun
+des groupes.
+
+\paragraph{Remarque} La syntaxe n'emp\^eche pas de d\'eclarer une liste
+de valeur dont les types sont h\'et\'erog\`enes. Ceci dit, une
+telle d\'efinition n'as pas beaucoup de sens d'un point du vue de
+l'interface \texttt{C++}, puisque le type du param\`etre concern\`e
+pourrait potentiellement changer dans chaque set de la collection
+engendr\'ee.
+
+\subsection{Red\'efinition de param\`etres}
+On peut red\'efinir un param\`etre avec une nouvelle valeur, bien que,
+telle quelle, cette pratique soit d\'ecourag\'ee. En particulier, un
+warning est \'emis dans le cas suivant:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  a = 1
+  a = 2
+\end{lstlisting}
+Ce comportement permet me mettre en \'evidence une une erreur qui est
+typiquement li\'ee \`a une faute de frappe o\`u a une faute
+d'inattention.
+
+Si le comportement souhait\'e est effectivement de red\'efinir un
+param\`etre, il faut pr\'ec\'eder la d\'efinition par le mot-cl\'e
+\texttt{override}, comme dans l'exemple suivant:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  a = 1
+  override a = 2
+\end{lstlisting}
+Si en revanche la variable qui est red\'efinie avec le mot-cl\'e
+\texttt{override} n'a pas \'et\'e d\'efinie, une exception est
+lev\'ee, comme dans le cas suivant:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  a = 1
+  override b = 2
+\end{lstlisting}
+De nouveau, ce comportement permet d'\'eviter une classe d'erreurs
+li\'ees \`a la volont\'e effective de red\'efinir des param\`etres
+dans certaines situations.
+\paragraph{Remarque} La syntaxe n'emp\^eche pas de changer le type d'un
+param\`etre par l'interm\'ediaire d'une red\'efinition. Ceci dit, une
+telle red\'efinition n'as pas beaucoup de sens d'un point du vue de
+l'interface \texttt{C++}.
+
+\subsection{Interpolation de chaine de caract\`ere}
+Les param\`etres dont le type est une cha\^ine de caract\`ere sont
+souvent utilis\'e pour repr\'esenter des noms de fichier, ou des
+fragments de nom de fichier, par exemple pour sp\'ecifier la
+destination dans le syst\`eme de fichier du r\'esultat d'un calcul.
+
+La syntaxe pr\'evoit un m\'ecanisme d'interpolation de cha\^ine de
+caract\`ere, qui permet de sp\'ecifier une cha\^ine de caract\`ere
+fonction des autres param\`etres d\'efinis dans le set.
+
+La valeur d'un param\`etre peut \^etre ins\'er\'e dans une cha\^ine de
+caract\`eres en sp\'ecifiant le nom de celui-ci entre accolade. Dans
+l'exemple qui suit, la valeur du param\`etre \texttt{n} est
+substitu\'e dans la cha\^ine de caract\`ere qui d\'efinit le
+param\`etre \texttt{output}:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  n = 100
+  output = "solution-with-subdivisions-{n}.dat"
+\end{lstlisting}
+Dans ce cas, le param\`;etres \texttt{output} se verra assigne la
+cha\^ine de caract\`ere
+\texttt{"solution-with-subdivisions-100.dat"}. Bien entendu, ceci
+fonctionne \'egalement avec les collections de param\`etres. Le code
+suivant:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  n = 100, 200
+  output = "soln-w-sub-{n}.dat"
+\end{lstlisting}
+est fonctionnellement \'equivalent \`a:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  [
+    n = 100, 200
+    output = "soln-w-sub-100.dat", "soln-w-sub-200.dat"
+  ]
+\end{lstlisting}
+tout en \'etant plus court \`a \'ecrire, et moins susceptible \`a
+l'introduction d'erreur.
+
+
+
+\subsection{Exemple complet}
+
+Pour conclure cette documentation, on donne un exemple complet
+inspir\'e du code de simulation de formation de gel en p\'eriph\'erie
+des particules d'alumine. Pour \'eviter de surcharger la
+pr\'esentation, on a omis l'ensemble des commentaires, \`a l'exception
+des unit\'es physiques.
+
+Le fichier de configuration principal
+\path{\texttt{cryolite-particle-remelt.conf}} contient les d\'efinitions
+suivantes:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  import "config/physical/cryolite-su.conf"
+  import "config/model/cryolite-particle-remelt-su.conf"
+  import "config/numerical/cryolite-particle-remelt.conf"
+  
+  output-prefix = "cryolite-particle-remelt/output"
+  output-transient-solution = no
+  output-final-solution = yes
+  output-transition = yes
+  output-beta-function = no
+  output-neumann-exact-solution = no
+\end{lstlisting}
+Le fichier principal inclu trois fichiers de configurations qui
+regroupent respectivement les param\`etres sp\'ecifiques \`a la
+physique des mat\'eriaux, c'est-\`a-dire les param\`etres
+thermocin\'etiques de l'alumine et du bain dans ce cas-ci, les
+param\`etres sp\'ecifiques au mod\`ele, soit la sp\'ecification de la
+g\'eom\'etrie, les conditions de bords, les conditions initiales, etc,
+et finalement les param\`etres sp\'ecifiques \`a la m\'ethode
+num\'`erique. On a \`egalement plac\'e ici tous les param\`etres qui
+contr\^ole l'output de la simulation, et qui sont susceptibles de
+changer fr\`equemment.
+
+Le contenu des trois fichiers inclus est donn\'e ci-dessous. Le
+contenu de \texttt{config/physical/cryolite-\-su.conf} est:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  electrolyte-density = 2130.0e-9 ; [kg/mm^3]
+  alumina-density = 2130.0e-9 ; [kg/mm^3]
+  
+  electrolyte-sl-low-t = 950.0 ; [C]
+  electrolyte-sl-high-t = 950.0 ; [C]
+  electrolyte-sl-latent-heat = 5.5083e5 ; [j/kg]
+  
+  solid-electrolyte-heat-capacity = 1403. ; [j/kg/K]
+  liquid-electrolyte-heat-capacity = 1861.3 ; [j/kg/K]
+  alumina-heat-capacity = 1403. ; [j/kg/K]
+  
+  solid-electrolyte-diffusivity-coefficient = 2.0e-3 ; [j/s/mm/K]
+  liquid-electrolyte-diffusivity-coefficient = 2.0e-3 ; [j/s/mm/K]
+  alumina-diffusivity-coefficient = 2.0e-3 ; [j/s/mm/K]
+\end{lstlisting}
+
+Le contenu de \path{\texttt{config/model/cryolite-\-particle-\-remelt-\-su.conf}} est:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  time-end    = 0.130  ; [s]
+  domain-size = .5  ; [mm]
+  
+  particle-radius = 0.05  ; [mm]
+  
+  particle-initial-temperature    = 150.0 ; [C]
+  electrolyte-initial-temperature = 955.0 ; [C]
+  
+  left-bc-type   = #neumann
+  left-bc-value  = 0.0 ; [K/mm]
+  
+  right-bc-type  = #dirichlet
+  right-bc-value = 955.0 ; [C]
+  
+  coordinates = #spherical
+\end{lstlisting}
+
+Le contenu de \texttt{config/numerical/cryolite-\-particle-\-remelt.conf} est:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  space-subdivisions = 4000
+  time-subdivisions  = 4000
+\end{lstlisting}
+
+Le fichier \texttt{cryolite-particle-remelt.conf} et les trois fichier
+de param\`etres inclus contitues la base de param\`etres par d\'efaut
+du mod\`ele simul\'e par le code, dans ce cas la formation de gel
+autour d'une particule d'alumine dans un bain \'electrolytique en
+\`elements finits $\mathbb P_1-\mathbb P_1$ sous forme enthalpique
+avec la formule de Chernoff.
+
+Toutes les \'etudes de ce mod\`ele devraient \^etre impl\'ement\'ees
+sous forme d'un fichier de param\`etres qui inclu la base
+\texttt{cryolite-particle-remelt.conf}, puis red\'efinit certain de
+ces param\`etres.
+
+Consid\'erons le cas d'une \'etude de convergence, imp\'ement\'e par
+le fichier de param\`etres
+\texttt{cryolite-\-particle-\-remelt-\-conv-\-study.conf} donn\'e ci-dessous:
+\begin{lstlisting}[language={},frame=single,basicstyle=\ttfamily]
+  ; Convergence study, expected order in dt and h is approximatly 0.75
+  
+  include "cryolite-particle-remelt.conf"
+  
+  override-output-final-solution = yes
+  override output-transition = no
+  override output-beta-function = no
+  override output-neumann-exact-solution = yes
+
+  override time-end = 0.5  ; [s]
+  override domain-size = 1000.0 ; [mm]
+  [
+    override space-subdivisions = 100, 200, 400, 800, 1600
+    override time-subdivisions = 128, 256, 512, 1024, 2048
+  ]
+
+  override output-prefix
+    = "cryolite-particle-remelt/conv/output-h-{space-subdivisions}"
+\end{lstlisting}
+
+On notera l'usage du mot-cl\'e \texttt{override} qui garantit que les
+param\`etres que l'on red\'efinit existent au pr\'ealable.
+On notera \'egalement l'usage d'un groupe de param\`etres pour
+d\'efinir le set de raffinements successifs. Et finalement, on
+remarquera que l'output est redirig\'e vers un dossier sp\'ecifique
+pour chaque raffinement. Pour \'eviter que la ligne soit trop longue,
+elle est r\'epartie sur deux lignes.
+
+\section{Interface \texttt{C++}}\label{sec:api}
