@@ -62,7 +62,7 @@ namespace parameter {
   }
 
 
-  const char* const basic_value::type_names[4];
+  constexpr const char* const basic_value::type_names[4];
   
   template<>
   std::string value<std::string>::print_value() const {

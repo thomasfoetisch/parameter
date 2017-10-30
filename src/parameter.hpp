@@ -200,7 +200,7 @@ namespace parameter {
     virtual const basic_value* eval(const collection& c) const = 0;
     
     using value_type_list = type_list<int, bool, std::string, double>;
-    static constexpr const char* type_names[] = {"integer", "boolean", "string", "real"};
+    static constexpr const char* type_names[4] = {"integer", "boolean", "string", "real"};
   };
 
   class enum_value: public basic_value {

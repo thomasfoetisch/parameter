@@ -12,7 +12,7 @@ all: $(BIN) $(LIB) $(HEADERS)
 
 -include $(DEPS)
 
-$(HEADERS): include/parameter/%: src/%
+$(HEADERS): include/$(PKG_NAME)/%: src/%
 	@echo "[INST]" $(<:src/%=%)
 	@$(MKDIR) $(MKDIRFLAGS) $(dir $@)
 	@cp $< $(dir $@)
@@ -47,16 +47,29 @@ clean:
 	@rm -f $(LIB)
 
 install: install-dev
-install-all: install-dev install-bin
+install-dev: install-header install-lib
+install-all: install-header install-lib install-bin
 
-install-dev: $(HEADERS) $(LIB)
-	@echo "[CP]  " $(LIB) $(HEADERS)
+install-header: $(HEADERS)
+	@echo "[CP]  " $(HEADERS)
+ifneq ($(HEADERS),)
+	@$(MKDIR) $(MKDIRFLAGS) $(PREFIX)/$(INCLUDE_DIR)/
 	@cp -r include/* $(PREFIX)/$(INCLUDE_DIR)/
+endif
+
+install-lib: $(LIB)
+	@echo "[CP]  " $(LIB)
+ifneq ($(LIB),)
+	@$(MKDIR) $(MKDIRFLAGS) $(PREFIX)/$(LIB_DIR)/
 	@cp $(LIB) $(PREFIX)/$(LIB_DIR)/
+endif
 
 install-bin: $(BIN)
 	@echo "[CP]  " $(BIN)
+ifneq ($(BIN),)
+	@$(MKDIR) $(MKDIRFLAGS) $(PREFIX)/$(BIN_DIR)/
 	@cp $(BIN) $(PREFIX)/$(BIN_DIR)/
+endif
 
 print-%:
 	@echo $*=$($*)

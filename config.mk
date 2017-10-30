@@ -1,8 +1,8 @@
-CXX = g++
+CXX = clang++
 DEPS_BIN = g++
-DEPSFLAGS = -I/Users/thomashilke/.local/include
-CXXFLAGS = -g -std=c++11 -I/Users/thomashilke/.local/include
-LDFLAGS = -g -L/Users/thomashilke/.local/lib/
+DEPSFLAGS = -I$(HOME)/.local/include
+CXXFLAGS = -O2 -std=c++11 -I$(HOME)/.local/include
+LDFLAGS = -O2 -L$(HOME)/.local/lib/
 LDLIB = -llexer
 AR = ar
 ARFLAGS = rc
@@ -14,6 +14,7 @@ BIN_DIR = bin/
 INCLUDE_DIR = include/
 LIB_DIR = lib/
 
+PKG_NAME = parameter
 
 SOURCES = src/main.cpp src/parameter.cpp src/enums.cpp src/collection.cpp
 
