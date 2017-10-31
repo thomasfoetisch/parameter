@@ -492,4 +492,288 @@ remarquera que l'output est redirig\'e vers un dossier sp\'ecifique
 pour chaque raffinement. Pour \'eviter que la ligne soit trop longue,
 elle est r\'epartie sur deux lignes.
 
+
+
 \section{Interface \texttt{C++}}\label{sec:api}
+La librairie \texttt{parameter} offre une unique classe
+\texttt{parameter::collection} pour lire des fichiers de param\`etres,
+g\'erer des collections de parametres et acc\'eder \`a la valeur de
+chaque param\`etre.
+
+Dans cette section on pr\'esente l'interface de cette classe,
+accompagn\'e par des exemples. L'interface public de la classe
+\texttt{parameter::collection} est la suivante:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  namespace parameter {
+    class collection {
+     public:
+      collection();
+      ~collection();
+
+      std::size_t get_collection_size() const;
+      void set_current_collection(std::size_t i);
+
+      void read_from_file(const std::string& filename);
+
+      void set_key_value(const std::string& key, double value);
+      void set_key_value(const std::string& key, bool value);
+      void set_key_value(const std::string& key, int value);
+      void set_key_value(const std::string& key, const std::string& value);
+
+      template<typename enum_type>
+      enum_type get_enum_value(
+        const std::string& key,
+        const std::map<std::string, enum_type>& token_map) const;
+
+      template<typename value_type>
+      value_type get_value(const std::string& key) const;
+
+      const basic_value* get_basic_value(const std::string& key) const;
+
+      void clear();
+
+      void print_key_values(std::ostream& stream) const;
+    };
+  }
+\end{lstlisting}
+
+\subsection{Construction}
+L'unique constructeur est le constructeur par d\'efaut qui ne prend
+pas de param\`etre:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  parameter::collection::collection();
+\end{lstlisting}
+
+\subsubsection{Exemple}
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  #include <parameter.hpp>
+
+  int main(int argc, char** argv) {
+    // Declaration et initialisation d'une collection p:
+    parameter::collection p;
+    
+    return 0;
+  }
+\end{lstlisting}
+
+
+
+\subsection{Lecture d'un fichier de param\`etre}
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  void parameter::collection::read_from_file(const std::string& filename);
+\end{lstlisting}
+
+\subsubsection{Exemple}
+Le code suivant:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  #include <iostream>
+  #include <parameter.hpp>
+
+  int main(int argc, char** argv) {
+    // Declaration et initialisation d'une collection p:
+    parameter::collection p;
+    p.read_from_file("file.conf");
+    p.print_key_values(std::cout);
+    
+    return 0;
+  }
+\end{lstlisting}
+affiche le r\'esultat suivant dans le terminal:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  integer everest-height = 8848
+  real pi = 3.1415
+\end{lstlisting}
+pour autant que le fichier \texttt{file.conf} contienne:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  pi = 3.1415
+  everest-height = 8848
+\end{lstlisting}
+
+
+
+\subsection{Insertion manuelle de param\`etre}
+Les quatres m\'ethodes suivantes permette d'ins\'erer de nouvelles
+valeurs dans la collection de parametre dont le type correspond au
+type du deuxi\`eme argument:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  void parameter::collection::set_key_value(const std::string& key, double value);
+  void parameter::collection::set_key_value(const std::string& key, bool value);
+  void parameter::collection::set_key_value(const std::string& key, int value);
+  void parameter::collection::set_key_value(const std::string& key, const std::string& value);
+\end{lstlisting}
+On note qu'il n'y a pas de m\'ethode pour ins\'erer une valeur de type
+\texttt{enum}, et il n'est pas possible non plus de d\'efinir
+plusieurs valeurs pour un param\`etres donn\'e.
+
+\subsubsection{Exemple}
+Le code suivant:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  #include <iostream>
+  #include <parameter.hpp>
+
+  int main(int argc, char** argv) {
+    // Declaration et initialisation d'une collection p:
+    parameter::collection p;
+    
+    p.set_key_value("pi", 3.1415);
+    p.set_key_value("everest-height", 8848);
+
+    p.print_key_values(std::cout);
+    
+    return 0;
+  }
+\end{lstlisting}
+affiche le r\'esultat suivant dans le terminal:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  integer everest-height = 8848
+  real pi = 3.1415
+\end{lstlisting}
+
+
+
+\subsection{Acc\`es au param\`etres}
+Le deux m\'ethodes templates suivantes permette d'acc\'eder aux valeurs des
+param\`etres d\'efinis par la collection:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+   template<typename enum_type>
+   enum_type parameter::collection::get_enum_value(
+     const std::string& key,
+     const std::map<std::string, enum_type>& token_map) const;
+     
+   template<typename value_type>
+   value_type parameter::collection::get_value(const std::string& key) const;
+\end{lstlisting}
+La m\'ethode \texttt{get_enum_value} prend en param\`etre la cl\`e,
+ainsi qu'une \texttt{std::map} qui associe un \'element d'un type
+enum\'er\'e \`a une cha\^ine de caract\`ere.
+
+\subsubsection{Exemple: param\`etre de type \texttt{real}, \texttt{integer},
+  \texttt{string} et \texttt{boolean}}
+Le code qui suit:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  #include <iostream>
+  #include <parameter.hpp> 
+
+  int main(int argc, char** argv) {
+    // Declaration et initialisation d'une collection p:
+    parameter::collection p;
+    p.read_from_file("file.conf");
+    
+    std::cout << "everest-value is " << p.get_value<int>("everest-value") << std::endl;
+    std::cout << "pi is " << p.get_value<double>("pi") << std::endl;
+    
+    return 0;
+  }
+\end{lstlisting}
+affiche le r\'esultat suivant dans le terminal:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  everest-height is 8848
+  pi is 3.1415
+\end{lstlisting}
+pour autant que le fichier \texttt{file.conf} contienne:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  pi = 3.1415
+  everest-height = 8848
+\end{lstlisting}
+
+\subsubsection{Exemple: param\`etre de type enum\'er\'e}
+Le code qui suit:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  #include <iostream>
+  #include <parameter.hpp> 
+
+  enum class bc_type { dirichlet, neumann };
+  
+  int main(int argc, char** argv) {
+    std::map<std::string, bc_type> bc_type_map;
+    bc_type_map["dirichlet"] = bc_type::dirichlet;
+    bc_type_map["neumann"] = bc_type::neumann;
+    
+    // Declaration et initialisation d'une collection p:
+    parameter::collection p;
+    p.read_from_file("file.conf");
+
+    bc_type bc(p.get_enum_value<bc_type>("bc", bc_type_map));
+
+    switch (bc) {
+    case bc_type::dirichlet:
+    std::cout << "bc is dirichlet" << std::endl;
+    break;
+
+    case bc_type::neumann:
+    std::cout << "bc is neumann" << std::endl;
+    break;
+    }
+    
+    return 0;
+  }
+\end{lstlisting}
+affiche le r\'esultat suivant dans le terminal:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  bc is dirichlet
+\end{lstlisting}
+pour autant que le fichier \texttt{file.conf} contienne:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  bc = #dirichlet
+\end{lstlisting}
+
+
+\subsection{It\'eration \`a travers une collection}
+La paire de m\'ethodes suivante permet d'acc\'eder \`a la taille de la
+collection de param\`etres et de s\'electionner l'\'el\'ement courant
+de la collection:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  std::size_t parameter::collection::get_collection_size() const;
+  void parameter::collection::set_current_collection(std::size_t i);  
+\end{lstlisting}
+
+\subsubsection{Exemple}
+
+Le code qui suit:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  #include <iostream>
+  #include <parameter.hpp> 
+
+  int main(int argc, char** argv) {
+   
+    // Declaration et initialisation d'une collection p:
+    parameter::collection p;
+    p.read_from_file("file.conf");
+
+    for (std::size_t i(0); i < p.get_collection_size(); ++i) {
+      p.set_current_collection(i);
+      std::cout << "collection #" << i + 1 << ":" << std::endl;
+      
+      std::cout << "  n = " << p.get_value<int>("n") << std::endl;
+      std::cout << "  m = " << p.get_value<int>("m") << std::endl;
+    }
+    
+    return 0;
+  }
+\end{lstlisting}
+affiche le r\'esultat suivant dans le terminal:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  collection #1:
+    n = 32
+    m = 3
+  collection #2:
+    n = 64
+    m = 3
+  collection #3:
+    n = 128
+    m = 3
+  collection #4:
+    n = 32
+    m = 4
+  collection #5:
+    n = 64
+    m = 4
+  collection #6:
+    n = 128
+    m = 4
+\end{lstlisting}
+pour autant que le fichier \texttt{file.conf} contienne:
+\begin{lstlisting}[language=c++,frame=single,basicstyle=\ttfamily\footnotesize]
+  n = 32, 64, 128
+  m = 3, 4
+\end{lstlisting}
